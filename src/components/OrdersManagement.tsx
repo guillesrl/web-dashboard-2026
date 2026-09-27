@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Clock, CheckCircle, XCircle, AlertCircle, FileDown, ChevronRight, ChevronDown } from "lucide-react";
 import { parseNumber } from "@/lib/utils";
+import { filterOrdersByPeriod, type OrderPeriod } from "@/lib/orderFilters";
 
 
 function OrdersManagementComponent() {
@@ -35,6 +36,7 @@ function OrdersManagementComponent() {
   const [selectedItem, setSelectedItem] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [orderPeriod, setOrderPeriod] = useState<OrderPeriod>('today');
 
   const statusOptions = [
     { value: "pending", label: "Pendiente", color: "bg-yellow-500" },
@@ -43,6 +45,8 @@ function OrdersManagementComponent() {
     { value: "delivered", label: "Entregado", color: "bg-gray-500" },
     { value: "cancelled", label: "Cancelado", color: "bg-red-500" }
   ];
+
+  const visibleOrders = filterOrdersByPeriod(orders, orderPeriod);
 
   const formatDateForDisplay = (dateString: string | null): string => {
     if (!dateString) return '--/--/----';
@@ -249,11 +253,11 @@ function OrdersManagementComponent() {
             <CardDescription className="text-xs md:text-sm">Administra los pedidos</CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => exportOrdersToPDF(orders, 'Reporte de Pedidos')}>
+            <Button variant="outline" size="sm" onClick={() => exportOrdersToPDF(visibleOrders, 'Reporte de Pedidos')}>
               <FileDown className="h-4 w-4 mr-2" />
               PDF
             </Button>
-            <Button variant="outline" size="sm" onClick={() => exportOrdersToExcel(orders, 'Reporte de Pedidos')}>
+            <Button variant="outline" size="sm" onClick={() => exportOrdersToExcel(visibleOrders, 'Reporte de Pedidos')}>
               <FileDown className="h-4 w-4 mr-2" />
               Excel
             </Button>
@@ -376,6 +380,17 @@ function OrdersManagementComponent() {
         </div>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-wrap gap-2" aria-label="Filtrar pedidos por período">
+          <Button size="sm" variant={orderPeriod === 'today' ? 'default' : 'outline'} onClick={() => setOrderPeriod('today')}>
+            Pedidos de hoy
+          </Button>
+          <Button size="sm" variant={orderPeriod === 'week' ? 'default' : 'outline'} onClick={() => setOrderPeriod('week')}>
+            Mostrar esta semana
+          </Button>
+          <Button size="sm" variant={orderPeriod === 'all' ? 'default' : 'outline'} onClick={() => setOrderPeriod('all')}>
+            Mostrar todos
+          </Button>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -389,14 +404,14 @@ function OrdersManagementComponent() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {orders.length === 0 ? (
+            {visibleOrders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  No hay pedidos registrados
+                  No hay pedidos en el período seleccionado
                 </TableCell>
               </TableRow>
             ) : (
-              orders.map((order) => {
+              visibleOrders.map((order) => {
                 const isExpanded = expandedId === order.id;
                 return (
                 <Fragment key={order.id}>
