@@ -596,7 +596,9 @@ app.get('/api/orders', async (req, res) => {
       queryText += " WHERE status NOT IN ('delivered', 'cancelled')";
     }
 
-    queryText += ' ORDER BY created_at DESC';
+    // Algunos pedidos heredados guardan `created_at` solo como fecha. Ordenar
+    // también por la hora mostrada evita que queden mezclados dentro del día.
+    queryText += ' ORDER BY created_at DESC, time DESC NULLS LAST, id DESC';
     const { rows } = await pool.query(queryText, params);
     res.json({ success: true, data: rows.map(mapOrder) });
   } catch (err) {
