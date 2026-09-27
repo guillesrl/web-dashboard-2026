@@ -250,6 +250,18 @@ Todas las rutas `/api/*` (salvo las públicas de auth y health) requieren token 
 - `POST /api/orders` - Crear nuevo pedido
 - `PATCH /api/orders/:id/status` - Cambiar estado
 
+### Pedidos de OpenLivery
+
+El backend ofrece dos rutas privadas para agentes, protegidas por la cabecera
+`x-agent-api-key` con el valor de `AGENT_ORDER_API_KEY`:
+
+- `GET /api/agent/menu` - Menú y stock operativo.
+- `POST /api/agent/orders` - Valida las líneas, bloquea el inventario con una
+  transacción, crea el pedido y descuenta el stock de forma atómica.
+
+El total se calcula en el servidor; el agente nunca envía precios ni puede
+modificar stock directamente.
+
 ### Reservas
 - `GET /api/reservations?filter=today|month` - Obtener reservas con filtros server-side
 - `POST /api/reservations` - Crear nueva reserva

@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import pg from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { z } from 'zod';
 import { authEnabled, createToken, checkPassword, requireAuth } from './auth.js';
@@ -20,6 +21,7 @@ const app = express();
 const port = process.env.PORT || 80;
 
 const DATABASE_URL = process.env.DATABASE_URL;
+const AGENT_ORDER_API_KEY = process.env.AGENT_ORDER_API_KEY || '';
 
 if (!DATABASE_URL) {
   console.error('❌ Error: DATABASE_URL debe estar definida en las variables de entorno');
@@ -63,6 +65,28 @@ const orderSchema = z.object({
   })).min(1),
   total: z.number().positive(),
   status: z.enum(['pending', 'preparing', 'ready', 'delivered', 'cancelled']).optional(),
+});
+
+const agentOrderSchema = z.object({
+  customer_name: z.string().trim().min(1).max(255),
+  customer_phone: z.string().trim().min(1).max(50).optional(),
+  fulfillment: z.enum(['pickup', 'delivery']),
+  address: z.string().trim().min(1).max(255).optional(),
+  scheduled_for: z.string().datetime({ offset: true }).optional(),
+  observations: z.string().trim().max(2000).optional(),
+  items: z.array(z.object({
+    menu_item_id: z.number().int().positive().optional(),
+    name: z.string().trim().min(1).max(255).optional(),
+    quantity: z.number().int().min(1).max(100),
+  }).superRefine((item, ctx) => {
+    if (!item.menu_item_id && !item.name) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Cada artículo necesita menu_item_id o name' });
+    }
+  })).min(1).max(50),
+}).superRefine((order, ctx) => {
+  if (order.fulfillment === 'delivery' && !order.address) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['address'], message: 'La dirección es obligatoria para domicilio' });
+  }
 });
 
 const reservationSchema = z.object({
@@ -208,6 +232,179 @@ app.post('/api/login', (req, res) => {
     return res.status(401).json({ success: false, error: 'Contraseña incorrecta' });
   }
   res.json({ success: true, data: { token: createToken() } });
+});
+
+// ============================================
+// OPENLIVERY AGENT API (clave independiente del dashboard)
+// ============================================
+
+function requireAgentOrderKey(req, res, next) {
+  if (!AGENT_ORDER_API_KEY) {
+    return res.status(503).json({ success: false, error: 'La API de pedidos del agente no está configurada' });
+  }
+  const key = req.get('x-agent-api-key') || '';
+  const expected = Buffer.from(AGENT_ORDER_API_KEY);
+  const received = Buffer.from(key);
+  if (expected.length !== received.length || !crypto.timingSafeEqual(expected, received)) {
+    return res.status(401).json({ success: false, error: 'No autorizado' });
+  }
+  return next();
+}
+
+function agentError(code, message, details, statusCode = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.details = details;
+  error.statusCode = statusCode;
+  return error;
+}
+
+app.get('/api/agent/menu', requireAgentOrderKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, nombre, categoria, precio, stock, ingredientes, vegetariano, gluten, marisco, lactosa, vegano
+       FROM menu
+       ORDER BY categoria ASC, nombre ASC`
+    );
+    res.json({ success: true, data: rows.map(mapMenuItem) });
+  } catch (err) {
+    console.error('❌ Error en GET /api/agent/menu:', err.message);
+    res.status(500).json({ success: false, error: 'No se pudo consultar el menú' });
+  }
+});
+
+app.post('/api/agent/orders', requireAgentOrderKey, async (req, res) => {
+  const parsed = agentOrderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      error: 'Datos de pedido no válidos',
+      details: parsed.error.errors.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+    });
+  }
+
+  const order = parsed.data;
+  const client = await pool.connect();
+  let committed = false;
+
+  try {
+    await client.query('BEGIN');
+
+    // Primero resolvemos cada artículo a su id actual. No se aceptan nombres ambiguos.
+    const requestedById = new Map();
+    for (const requested of order.items) {
+      const result = requested.menu_item_id
+        ? await client.query('SELECT id, nombre FROM menu WHERE id = $1', [requested.menu_item_id])
+        : await client.query('SELECT id, nombre FROM menu WHERE lower(nombre) = lower($1)', [requested.name]);
+
+      if (result.rows.length === 0) {
+        throw agentError('ITEM_NOT_FOUND', 'Uno de los artículos ya no existe en el menú', { item: requested.name || requested.menu_item_id }, 409);
+      }
+      if (result.rows.length > 1) {
+        throw agentError('ITEM_AMBIGUOUS', 'Hay más de un artículo con ese nombre; usa menu_item_id', { item: requested.name }, 409);
+      }
+
+      const item = result.rows[0];
+      const previous = requestedById.get(item.id);
+      requestedById.set(item.id, { id: item.id, name: item.nombre, quantity: (previous?.quantity || 0) + requested.quantity });
+    }
+
+    // Bloqueo en orden estable: evita sobreventa y reduce el riesgo de interbloqueos.
+    const itemIds = [...requestedById.keys()].sort((a, b) => a - b);
+    const { rows: lockedItems } = await client.query(
+      `SELECT id, nombre, precio, stock
+       FROM menu
+       WHERE id = ANY($1::int[])
+       ORDER BY id
+       FOR UPDATE`,
+      [itemIds]
+    );
+
+    if (lockedItems.length !== itemIds.length) {
+      throw agentError('ITEM_NOT_FOUND', 'Uno de los artículos ya no existe en el menú', undefined, 409);
+    }
+
+    const lines = lockedItems.map((item) => {
+      const requested = requestedById.get(item.id);
+      if (Number(item.stock) < requested.quantity) {
+        throw agentError('INSUFFICIENT_STOCK', 'No hay stock suficiente para uno o más artículos', {
+          item: item.nombre,
+          available: Number(item.stock),
+          requested: requested.quantity,
+        }, 409);
+      }
+      const price = Number(item.precio);
+      return {
+        id: item.id,
+        name: item.nombre,
+        price,
+        quantity: requested.quantity,
+        line_total: Math.round(price * requested.quantity * 100) / 100,
+      };
+    });
+
+    const total = Math.round(lines.reduce((sum, line) => sum + line.line_total, 0) * 100) / 100;
+    const scheduledFor = order.scheduled_for ? new Date(order.scheduled_for) : null;
+    const { rows: createdOrders } = await client.query(
+      `INSERT INTO orders (
+        nombre, telefono, direccion, items, total, status, time,
+        source, fulfillment_type, scheduled_for, observations
+      ) VALUES ($1, $2, $3, $4, $5, 'pending', $6, 'openlivery', $7, $8, $9)
+      RETURNING *`,
+      [
+        order.customer_name,
+        order.customer_phone || null,
+        order.fulfillment === 'delivery' ? order.address : 'Recogida',
+        JSON.stringify(lines),
+        total,
+        scheduledFor ? scheduledFor.toISOString().slice(11, 16) : null,
+        order.fulfillment,
+        scheduledFor,
+        order.observations || null,
+      ]
+    );
+
+    const remainingStock = [];
+    for (const line of lines) {
+      const { rows } = await client.query(
+        `UPDATE menu
+         SET stock = stock - $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, nombre, stock`,
+        [line.quantity, line.id]
+      );
+      remainingStock.push({ id: rows[0].id, name: rows[0].nombre, stock: Number(rows[0].stock) });
+    }
+
+    await client.query('COMMIT');
+    committed = true;
+
+    for (const stock of remainingStock) {
+      const previous = lockedItems.find((item) => item.id === stock.id)?.stock;
+      notifyLowStock(stock.name, stock.stock, previous);
+    }
+    notifyTelegram(`🧾 <b>Nuevo pedido OpenLivery</b>\n${order.customer_name}\n${lines.length} artículo(s) · ${total.toFixed(2)}€`);
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        order_id: createdOrders[0].id,
+        status: 'pending',
+        total,
+        items: lines,
+        remaining_stock: remainingStock,
+      },
+    });
+  } catch (err) {
+    if (!committed) await client.query('ROLLBACK').catch(() => {});
+    if (err.code && err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message, code: err.code, details: err.details });
+    }
+    console.error('❌ Error en POST /api/agent/orders:', err.message);
+    return res.status(500).json({ success: false, error: 'No se pudo registrar el pedido' });
+  } finally {
+    client.release();
+  }
 });
 
 // A partir de aquí, todas las rutas /api requieren autenticación
@@ -502,10 +699,30 @@ app.delete('/api/reservations/:id', async (req, res) => {
 // SERVER START
 // ============================================
 
-app.listen(port, () => {
-  console.log(`✅ API server running on http://localhost:${port}`);
-  console.log(`📊 Database: Neon PostgreSQL`);
-});
+async function ensureAgentOrderColumns() {
+  await pool.query(`
+    ALTER TABLE orders
+      ADD COLUMN IF NOT EXISTS source VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS fulfillment_type VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS observations TEXT
+  `);
+}
+
+async function startServer() {
+  try {
+    await ensureAgentOrderColumns();
+    app.listen(port, () => {
+      console.log(`✅ API server running on http://localhost:${port}`);
+      console.log('📊 Database: Neon PostgreSQL');
+    });
+  } catch (err) {
+    console.error('❌ Error preparando el esquema de pedidos del agente:', err.message);
+    process.exit(1);
+  }
+}
+
+startServer();
 
 process.on('SIGINT', () => { console.log('\n👋 Shutting down...'); process.exit(0); });
 process.on('SIGTERM', () => { console.log('\n👋 Shutting down...'); process.exit(0); });
