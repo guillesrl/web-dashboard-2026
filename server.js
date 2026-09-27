@@ -99,11 +99,21 @@ const reservationSchema = z.object({
   notes: z.string().optional(),
 });
 
+const parseMenuPrice = (value) => {
+  if (typeof value === 'number') return value;
+
+  const raw = String(value ?? '').trim().replace(/[^\d,.-]/g, '');
+  const normalized = raw.includes(',')
+    ? raw.replace(/\./g, '').replace(',', '.')
+    : raw;
+  return Number.parseFloat(normalized);
+};
+
 const mapMenuItem = (row) => ({
   id: row.id,
   name: row.nombre,
   description: row.ingredientes,
-  price: parseFloat(row.precio),
+  price: parseMenuPrice(row.precio),
   category: row.categoria,
   stock: row.stock,
   available: row.stock > 0,
@@ -342,7 +352,10 @@ app.post('/api/agent/orders', requireAgentOrderKey, async (req, res) => {
           requested: requested.quantity,
         }, 409);
       }
-      const price = Number(item.precio);
+      const price = parseMenuPrice(item.precio);
+      if (!Number.isFinite(price)) {
+        throw agentError('INVALID_MENU_PRICE', 'Un artículo del menú tiene un precio inválido', { item: item.nombre }, 500);
+      }
       return {
         id: item.id,
         name: item.nombre,
