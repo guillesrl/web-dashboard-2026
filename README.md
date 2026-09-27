@@ -260,7 +260,9 @@ El backend ofrece dos rutas privadas para agentes, protegidas por la cabecera
   transacción, crea el pedido y descuenta el stock de forma atómica.
 
 El total se calcula en el servidor; el agente nunca envía precios ni puede
-modificar stock directamente.
+modificar stock directamente. Para clientes de herramientas HTTP que no
+admiten arrays anidados, el `POST` también acepta un único campo `order_json`
+con el JSON completo del pedido.
 
 ### Reservas
 - `GET /api/reservations?filter=today|month` - Obtener reservas con filtros server-side

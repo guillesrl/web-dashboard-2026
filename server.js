@@ -274,7 +274,16 @@ app.get('/api/agent/menu', requireAgentOrderKey, async (req, res) => {
 });
 
 app.post('/api/agent/orders', requireAgentOrderKey, async (req, res) => {
-  const parsed = agentOrderSchema.safeParse(req.body);
+  let payload = req.body;
+  if (typeof req.body?.order_json === 'string') {
+    try {
+      payload = JSON.parse(req.body.order_json);
+    } catch {
+      return res.status(400).json({ success: false, error: 'order_json debe contener JSON válido' });
+    }
+  }
+
+  const parsed = agentOrderSchema.safeParse(payload);
   if (!parsed.success) {
     return res.status(400).json({
       success: false,
