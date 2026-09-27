@@ -17,6 +17,8 @@ export interface Order {
   status: 'pending' | 'preparing' | 'ready' | 'delivered' | 'cancelled';
   notes?: string;
   created_at?: string;
+  scheduled_for?: string;
+  display_date?: string;
   time?: string;
   order_datetime?: string;
   updated_at?: string;

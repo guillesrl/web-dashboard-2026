@@ -107,6 +107,8 @@ function OrdersManagementComponent() {
       status: orderData.status || 'pending',
       notes: orderData.notes || '',
       created_at: orderData.created_at || null,
+      scheduled_for: orderData.scheduled_for || null,
+      display_date: orderData.display_date || null,
       time: orderData.time || null,
       order_datetime: orderData.order_datetime || null,
       updated_at: orderData.updated_at || null
@@ -433,7 +435,7 @@ function OrdersManagementComponent() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {formatDateForDisplay(order.created_at)}
+                    {formatDateForDisplay(order.display_date || order.scheduled_for || order.created_at)}
                   </TableCell>
                   <TableCell>
                     {formatTimeForDisplay(order.time)}

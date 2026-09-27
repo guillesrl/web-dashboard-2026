@@ -109,6 +109,27 @@ const parseMenuPrice = (value) => {
   return Number.parseFloat(normalized);
 };
 
+const BUSINESS_TIMEZONE = 'Europe/Andorra';
+
+const formatDateTimeForBusiness = (value) => {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BUSINESS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+
+  return {
+    date: `${part('year')}-${part('month')}-${part('day')}`,
+    time: `${part('hour')}:${part('minute')}`,
+  };
+};
+
 const mapMenuItem = (row) => ({
   id: row.id,
   name: row.nombre,
@@ -128,19 +149,20 @@ const mapMenuItem = (row) => ({
 });
 
 const mapOrder = (row) => {
-  let correctedTime = row.time;
-  let formattedDateTime = null;
+  const displayDateTime = row.scheduled_for || row.created_at;
+  const businessDateTime = displayDateTime ? formatDateTimeForBusiness(displayDateTime) : null;
+  let correctedTime = businessDateTime?.time || row.time || null;
+  let formattedDateTime = businessDateTime ? `${businessDateTime.date} ${correctedTime}` : null;
 
-  if (row.time) {
+  if (row.scheduled_for) {
+    // La hora de un pedido programado se muestra siempre en el horario del negocio.
+    correctedTime = businessDateTime?.time || null;
+    formattedDateTime = businessDateTime ? `${businessDateTime.date} ${correctedTime}` : null;
+  } else if (row.time) {
     const t = row.time.toString();
     correctedTime = t.length === 4 && t.includes(':') ? '0' + t : t.substring(0, 5);
-    const date = row.created_at
-      ? new Date(row.created_at).toISOString().split('T')[0]
-      : new Date().toISOString().split('T')[0];
+    const date = businessDateTime?.date || formatDateTimeForBusiness(new Date()).date;
     formattedDateTime = `${date} ${correctedTime}`;
-  } else if (row.created_at) {
-    formattedDateTime = new Date(row.created_at).toISOString().replace('T', ' ').substring(0, 19);
-    correctedTime = new Date(row.created_at).toTimeString().substring(0, 5);
   }
 
   return {
@@ -153,6 +175,8 @@ const mapOrder = (row) => {
     status: row.status,
     notes: null,
     created_at: row.created_at,
+    scheduled_for: row.scheduled_for,
+    display_date: businessDateTime?.date || null,
     time: correctedTime,
     order_datetime: formattedDateTime,
     updated_at: row.updated_at,
@@ -379,7 +403,7 @@ app.post('/api/agent/orders', requireAgentOrderKey, async (req, res) => {
         order.fulfillment === 'delivery' ? order.address : 'Recogida',
         JSON.stringify(lines),
         total,
-        scheduledFor ? scheduledFor.toISOString().slice(11, 16) : null,
+        scheduledFor ? formatDateTimeForBusiness(scheduledFor).time : null,
         order.fulfillment,
         scheduledFor,
         order.observations || null,
@@ -596,9 +620,9 @@ app.get('/api/orders', async (req, res) => {
       queryText += " WHERE status NOT IN ('delivered', 'cancelled')";
     }
 
-    // Algunos pedidos heredados guardan `created_at` solo como fecha. Ordenar
-    // también por la hora mostrada evita que queden mezclados dentro del día.
-    queryText += ' ORDER BY created_at DESC, time DESC NULLS LAST, id DESC';
+    // Los pedidos programados se ordenan por su fecha/hora de entrega; los
+    // demás, por cuándo se crearon. La hora y el id desempatan registros antiguos.
+    queryText += ' ORDER BY COALESCE(scheduled_for, created_at) DESC, time DESC NULLS LAST, id DESC';
     const { rows } = await pool.query(queryText, params);
     res.json({ success: true, data: rows.map(mapOrder) });
   } catch (err) {

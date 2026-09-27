@@ -3,7 +3,7 @@ import { filterOrdersByPeriod } from '@/lib/orderFilters';
 import type { Order } from '@/services/ordersService';
 
 const orders: Order[] = [
-  { id: 1, customer_name: 'Hoy', items: [], total: 10, status: 'pending', created_at: '2026-09-30T00:05:00.000Z' },
+  { id: 1, customer_name: 'Hoy', items: [], total: 10, status: 'pending', created_at: '2026-09-29T22:05:00.000Z', scheduled_for: '2026-09-29T22:05:00.000Z', display_date: '2026-09-30' },
   { id: 2, customer_name: 'Esta semana', items: [], total: 10, status: 'pending', created_at: '2026-09-28T12:00:00.000Z' },
   { id: 3, customer_name: 'Semana pasada', items: [], total: 10, status: 'pending', created_at: '2026-09-27T12:00:00.000Z' },
 ];

@@ -17,7 +17,7 @@ function dateKeyInBusinessTimezone(now: Date): string {
 }
 
 function dateKeyFromOrder(order: Order): string | null {
-  const match = order.created_at?.match(/^\d{4}-\d{2}-\d{2}/);
+  const match = (order.display_date || order.scheduled_for || order.created_at)?.match(/^\d{4}-\d{2}-\d{2}/);
   return match?.[0] ?? null;
 }
 
