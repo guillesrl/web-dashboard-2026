@@ -18,6 +18,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 80;
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -234,6 +235,22 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many login attempts. Please try again later.' },
+});
+
+const agentOrderLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many order requests. Please try again shortly.' },
+});
+
 // Servir archivos estáticos en producción
 if (process.env.NODE_ENV === 'production') {
   const distPath = path.join(__dirname, 'dist');
@@ -259,7 +276,7 @@ app.get('/api/auth/status', (req, res) => {
   res.json({ success: true, data: { enabled: authEnabled } });
 });
 
-app.post('/api/login', (req, res) => {
+app.post('/api/login', loginLimiter, (req, res) => {
   if (!authEnabled) return res.json({ success: true, data: { token: null, enabled: false } });
   const { password } = req.body || {};
   if (!checkPassword(password)) {
@@ -307,7 +324,7 @@ app.get('/api/agent/menu', requireAgentOrderKey, async (req, res) => {
   }
 });
 
-app.post('/api/agent/orders', requireAgentOrderKey, async (req, res) => {
+app.post('/api/agent/orders', agentOrderLimiter, requireAgentOrderKey, async (req, res) => {
   let payload = req.body;
   if (typeof req.body?.order_json === 'string') {
     try {
