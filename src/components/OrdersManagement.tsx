@@ -384,13 +384,13 @@ function OrdersManagementComponent() {
       <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
         <div className="mb-4 flex flex-wrap gap-2" aria-label="Filtrar pedidos por período">
           <Button size="sm" variant={orderPeriod === 'today' ? 'default' : 'outline'} onClick={() => setOrderPeriod('today')}>
-            Pedidos de hoy
+            Hoy
           </Button>
           <Button size="sm" variant={orderPeriod === 'week' ? 'default' : 'outline'} onClick={() => setOrderPeriod('week')}>
-            Mostrar esta semana
+            Semana
           </Button>
           <Button size="sm" variant={orderPeriod === 'all' ? 'default' : 'outline'} onClick={() => setOrderPeriod('all')}>
-            Mostrar todos
+            Todos
           </Button>
         </div>
         <Table>
