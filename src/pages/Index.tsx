@@ -58,7 +58,7 @@ const Index = () => {
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
       <header className="border-b bg-card flex-shrink-0">
-        <div className="container mx-auto px-4 py-6">
+        <div className="container mx-auto px-4 py-3 md:py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <ChefHat className="h-8 w-8 text-primary" />
