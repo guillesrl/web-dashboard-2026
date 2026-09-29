@@ -54,7 +54,7 @@ export default function AnalyticsPage() {
   }, [orders, range]);
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <h1 className="text-xl md:text-2xl font-bold">Analíticas</h1>
         <DateRangeSelector

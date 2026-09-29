@@ -248,7 +248,7 @@ function OrdersManagementComponent() {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="p-3 md:p-6">
         <div className="flex justify-between items-center">
           <div>
             <CardTitle className="text-base md:text-lg">Pedidos</CardTitle>
@@ -381,7 +381,7 @@ function OrdersManagementComponent() {
           </Dialog>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
         <div className="mb-4 flex flex-wrap gap-2" aria-label="Filtrar pedidos por período">
           <Button size="sm" variant={orderPeriod === 'today' ? 'default' : 'outline'} onClick={() => setOrderPeriod('today')}>
             Pedidos de hoy

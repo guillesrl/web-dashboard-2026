@@ -183,7 +183,7 @@ export function ReservationsManagement({ reservations, isLoading }: Reservations
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="p-3 md:p-6">
         <div className="flex justify-between items-center">
           <div>
             <CardTitle className="text-base md:text-lg">Reservas</CardTitle>
@@ -319,7 +319,7 @@ export function ReservationsManagement({ reservations, isLoading }: Reservations
           />
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
         <Table>
           <TableHeader>
             <TableRow>
