@@ -9,7 +9,8 @@
           "rule": {
             "interval": [
               {
-                "field": "minutes"
+                "field": "cronExpression",
+                "expression": "* * * * *"
               }
             ]
           }
@@ -20,6 +21,40 @@
         "typeVersion": 1.2,
         "position": [
           0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "b39f56f6-ef8d-46bb-a6f8-3e9c7f5d0f6c",
+                "leftValue": "={{ String($json.id || '') }}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "77d31ef1-5176-47ea-a6f7-3e0d6e97f52f",
+        "name": "Hay pedido para avisar",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          480,
           0
         ]
       },
@@ -77,7 +112,7 @@
         "type": "n8n-nodes-base.whatsApp",
         "typeVersion": 1,
         "position": [
-          500,
+          720,
           0
         ],
         "credentials": {
@@ -100,7 +135,7 @@
         "type": "n8n-nodes-base.postgres",
         "typeVersion": 2.6,
         "position": [
-          760,
+          980,
           0
         ],
         "credentials": {
@@ -127,11 +162,23 @@
         "main": [
           [
             {
-              "node": "Enviar plantilla pedido_listo_recogida",
+              "node": "Hay pedido para avisar",
               "type": "main",
               "index": 0
             }
           ]
+        ]
+      },
+      "Hay pedido para avisar": {
+        "main": [
+          [
+            {
+              "node": "Enviar plantilla pedido_listo_recogida",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
         ]
       },
       "Enviar plantilla pedido_listo_recogida": {
