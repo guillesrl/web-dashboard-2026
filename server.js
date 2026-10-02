@@ -688,7 +688,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
 
     const previous = current.rows[0];
     let result;
-    if (status === 'delivered' && previous.status !== 'delivered' && !previous.delivery_notification_sent_at) {
+    if (status === 'ready' && previous.status !== 'ready' && !previous.delivery_notification_sent_at) {
       result = await client.query(
         `UPDATE orders
          SET status=$1,
@@ -699,7 +699,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
          RETURNING *`,
         [status, id]
       );
-    } else if (status !== 'delivered' && !previous.delivery_notification_sent_at) {
+    } else if (status !== 'ready' && !previous.delivery_notification_sent_at) {
       result = await client.query(
         `UPDATE orders
          SET status=$1,
