@@ -1,0 +1,152 @@
+[
+  {
+    "name": "Restaurante — Aviso de pedido entregado",
+    "active": true,
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes"
+              }
+            ]
+          }
+        },
+        "id": "a8ec67e6-9d4e-4aad-9101-6e6174d62f62",
+        "name": "Cada minuto",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "WITH claimable AS (\n  SELECT id\n  FROM orders\n  WHERE status = 'delivered'\n    AND COALESCE(telefono, '') <> ''\n    AND delivery_notification_due_at <= NOW()\n    AND delivery_notification_sent_at IS NULL\n    AND (delivery_notification_claimed_at IS NULL OR delivery_notification_claimed_at < NOW() - INTERVAL '10 minutes')\n  ORDER BY delivery_notification_due_at ASC\n  LIMIT 20\n  FOR UPDATE SKIP LOCKED\n)\nUPDATE orders AS o\nSET delivery_notification_claimed_at = NOW()\nFROM claimable\nWHERE o.id = claimable.id\nRETURNING o.id, o.nombre, o.telefono, o.direccion, o.total",
+          "options": {}
+        },
+        "id": "d6e5e6cf-65cb-48ed-85f2-c20d1a27db64",
+        "name": "Reservar avisos vencidos",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          240,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "GLFhlsFDl9vGbYAt",
+            "name": "Neon_Resto"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "phoneNumberId": "1345205168674012",
+          "recipientPhoneNumber": "={{ String($json.telefono || '').replace(/\\D/g, '') }}",
+          "template": "pedido_listo_recogida|es",
+          "components": {
+            "component": [
+              {
+                "bodyParameters": {
+                  "parameter": [
+                    {
+                      "text": "={{ $json.nombre || 'Cliente' }}"
+                    },
+                    {
+                      "text": "={{ String($json.id) }}"
+                    },
+                    {
+                      "text": "={{ $json.direccion || 'el local' }}"
+                    },
+                    {
+                      "text": "={{ Number($json.total || 0).toFixed(2).replace('.', ',') }}"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "id": "d17de2d8-6c86-47ae-8cbb-e5dd8d777bd8",
+        "name": "Enviar plantilla pedido_listo_recogida",
+        "type": "n8n-nodes-base.whatsApp",
+        "typeVersion": 1,
+        "position": [
+          500,
+          0
+        ],
+        "credentials": {
+          "whatsAppApi": {
+            "id": "6yvvLq3vjXSei8jQ",
+            "name": "WhatsApp account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "UPDATE orders\nSET delivery_notification_sent_at = NOW(),\n    delivery_notification_claimed_at = NULL\nWHERE id = $1\n  AND delivery_notification_sent_at IS NULL\nRETURNING id",
+          "options": {
+            "queryReplacement": "={{ [$json.id] }}"
+          }
+        },
+        "id": "25928458-820f-4e05-ab2d-c50c4d05f3ee",
+        "name": "Registrar aviso enviado",
+        "type": "n8n-nodes-base.postgres",
+        "typeVersion": 2.6,
+        "position": [
+          760,
+          0
+        ],
+        "credentials": {
+          "postgres": {
+            "id": "GLFhlsFDl9vGbYAt",
+            "name": "Neon_Resto"
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Cada minuto": {
+        "main": [
+          [
+            {
+              "node": "Reservar avisos vencidos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Reservar avisos vencidos": {
+        "main": [
+          [
+            {
+              "node": "Enviar plantilla pedido_listo_recogida",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Enviar plantilla pedido_listo_recogida": {
+        "main": [
+          [
+            {
+              "node": "Registrar aviso enviado",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    }
+  }
+]

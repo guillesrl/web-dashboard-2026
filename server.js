@@ -68,6 +68,8 @@ const orderSchema = z.object({
   status: z.enum(['pending', 'preparing', 'ready', 'delivered', 'cancelled']).optional(),
 });
 
+const orderStatusSchema = z.enum(['pending', 'preparing', 'ready', 'delivered', 'cancelled']);
+
 const agentOrderSchema = z.object({
   customer_name: z.string().trim().min(1).max(255),
   customer_phone: z.string().trim().min(1).max(50).optional(),
@@ -668,18 +670,63 @@ app.post('/api/orders', async (req, res) => {
 });
 
 app.patch('/api/orders/:id/status', async (req, res) => {
+  const parsedStatus = orderStatusSchema.safeParse(req.body?.status);
+  if (!parsedStatus.success) {
+    return res.status(400).json({ success: false, error: 'Estado de pedido no válido' });
+  }
+
+  const client = await pool.connect();
   try {
     const { id } = req.params;
-    const { status } = req.body;
-    const { rows } = await pool.query(
-      'UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
-      [status, id]
-    );
+    const status = parsedStatus.data;
+    await client.query('BEGIN');
+    const current = await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE', [id]);
+    if (!current.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, error: 'Order not found' });
+    }
+
+    const previous = current.rows[0];
+    let result;
+    if (status === 'delivered' && previous.status !== 'delivered' && !previous.delivery_notification_sent_at) {
+      result = await client.query(
+        `UPDATE orders
+         SET status=$1,
+             updated_at=NOW(),
+             delivery_notification_due_at=NOW() + INTERVAL '1 minute',
+             delivery_notification_claimed_at=NULL
+         WHERE id=$2
+         RETURNING *`,
+        [status, id]
+      );
+    } else if (status !== 'delivered' && !previous.delivery_notification_sent_at) {
+      result = await client.query(
+        `UPDATE orders
+         SET status=$1,
+             updated_at=NOW(),
+             delivery_notification_due_at=NULL,
+             delivery_notification_claimed_at=NULL
+         WHERE id=$2
+         RETURNING *`,
+        [status, id]
+      );
+    } else {
+      result = await client.query(
+        'UPDATE orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING *',
+        [status, id]
+      );
+    }
+
+    await client.query('COMMIT');
+    const { rows } = result;
     if (!rows[0]) return res.status(404).json({ success: false, error: 'Order not found' });
     res.json({ success: true, data: mapOrder(rows[0]) });
   } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('❌ Error en PATCH /api/orders/:id/status:', err.message);
     res.status(500).json({ success: false, error: err.message });
+  } finally {
+    client.release();
   }
 });
 
@@ -770,7 +817,10 @@ async function ensureAgentOrderColumns() {
       ADD COLUMN IF NOT EXISTS source VARCHAR(50),
       ADD COLUMN IF NOT EXISTS fulfillment_type VARCHAR(20),
       ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS observations TEXT
+      ADD COLUMN IF NOT EXISTS observations TEXT,
+      ADD COLUMN IF NOT EXISTS delivery_notification_due_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS delivery_notification_claimed_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS delivery_notification_sent_at TIMESTAMPTZ
   `);
 }
 
