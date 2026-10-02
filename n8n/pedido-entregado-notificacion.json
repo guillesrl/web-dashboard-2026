@@ -127,7 +127,7 @@
           "operation": "executeQuery",
           "query": "UPDATE orders\nSET delivery_notification_sent_at = NOW(),\n    delivery_notification_claimed_at = NULL\nWHERE id = $1\n  AND delivery_notification_sent_at IS NULL\nRETURNING id",
           "options": {
-            "queryReplacement": "={{ [$json.id] }}"
+            "queryReplacement": "={{ [$('Reservar avisos vencidos').item.json.id] }}"
           }
         },
         "id": "25928458-820f-4e05-ab2d-c50c4d05f3ee",
