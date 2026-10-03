@@ -92,6 +92,12 @@ const agentOrderSchema = z.object({
   }
 });
 
+const agentCancelOrderSchema = z.object({
+  action: z.literal('cancel'),
+  order_id: z.coerce.number().int().positive(),
+  customer_phone: z.string().trim().min(6).max(50),
+});
+
 const reservationSchema = z.object({
   customer_name: z.string().min(1).max(255),
   customer_phone: z.string().optional(),
@@ -312,6 +318,82 @@ function agentError(code, message, details, statusCode = 400) {
   return error;
 }
 
+function phoneNumbersMatch(first, second) {
+  const normalize = (value) => String(value || '').replace(/\D/g, '');
+  const a = normalize(first);
+  const b = normalize(second);
+  return a.length >= 6 && b.length >= 6 && (a === b || a.endsWith(b) || b.endsWith(a));
+}
+
+async function cancelAgentOrder(payload, res) {
+  const parsed = agentCancelOrderSchema.safeParse(payload);
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      error: 'Datos de cancelación no válidos',
+      details: parsed.error.errors.map((issue) => ({ path: issue.path.join('.'), message: issue.message })),
+    });
+  }
+
+  const { order_id: orderId, customer_phone: customerPhone } = parsed.data;
+  const client = await pool.connect();
+  let committed = false;
+
+  try {
+    await client.query('BEGIN');
+    const current = await client.query('SELECT * FROM orders WHERE id=$1 FOR UPDATE', [orderId]);
+    const order = current.rows[0];
+
+    // No revelamos si existe un pedido de otro cliente.
+    if (!order || !phoneNumbersMatch(order.telefono, customerPhone)) {
+      throw agentError('ORDER_NOT_FOUND', 'No encontramos un pedido pendiente con esos datos', undefined, 404);
+    }
+    if (order.status === 'cancelled') {
+      await client.query('COMMIT');
+      committed = true;
+      return res.json({ success: true, data: { order_id: order.id, status: 'cancelled', already_cancelled: true } });
+    }
+    if (order.status !== 'pending') {
+      throw agentError('ORDER_CANNOT_BE_CANCELLED', 'El pedido ya está en preparación o listo; debe revisarlo el restaurante', { status: order.status }, 409);
+    }
+
+    const items = Array.isArray(order.items) ? order.items : [];
+    for (const item of items) {
+      const itemId = Number(item?.id);
+      const quantity = Number(item?.quantity);
+      if (Number.isInteger(itemId) && Number.isInteger(quantity) && quantity > 0) {
+        await client.query(
+          'UPDATE menu SET stock = stock + $1, updated_at=NOW() WHERE id=$2',
+          [quantity, itemId]
+        );
+      }
+    }
+
+    const { rows } = await client.query(
+      `UPDATE orders
+       SET status='cancelled',
+           updated_at=NOW(),
+           delivery_notification_due_at=NULL,
+           delivery_notification_claimed_at=NULL
+       WHERE id=$1
+       RETURNING *`,
+      [orderId]
+    );
+    await client.query('COMMIT');
+    committed = true;
+    return res.json({ success: true, data: { order_id: rows[0].id, status: 'cancelled', stock_restored: true } });
+  } catch (err) {
+    if (!committed) await client.query('ROLLBACK').catch(() => {});
+    if (err.code && err.statusCode) {
+      return res.status(err.statusCode).json({ success: false, error: err.message, code: err.code, details: err.details });
+    }
+    console.error('❌ Error al cancelar pedido del agente:', err.message);
+    return res.status(500).json({ success: false, error: 'No se pudo cancelar el pedido' });
+  } finally {
+    client.release();
+  }
+}
+
 app.get('/api/agent/menu', requireAgentOrderKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -334,6 +416,10 @@ app.post('/api/agent/orders', agentOrderLimiter, requireAgentOrderKey, async (re
     } catch {
       return res.status(400).json({ success: false, error: 'order_json debe contener JSON válido' });
     }
+  }
+
+  if (payload?.action === 'cancel') {
+    return cancelAgentOrder(payload, res);
   }
 
   const parsed = agentOrderSchema.safeParse(payload);
