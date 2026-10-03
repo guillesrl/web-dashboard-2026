@@ -294,8 +294,8 @@ function MenuManagementComponent() {
           <TableHeader>
             <TableRow>
               <TableHead>Nombre</TableHead>
-              <TableHead>Categoría</TableHead>
-              <TableHead>Precio</TableHead>
+              <TableHead className="w-[7.5rem] px-2 whitespace-nowrap">Categoría</TableHead>
+              <TableHead className="w-20 px-2 whitespace-nowrap">Precio</TableHead>
               <TableHead>Stock</TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
@@ -321,10 +321,10 @@ function MenuManagementComponent() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="w-[7.5rem] px-2 whitespace-nowrap">
                       {categoryBadge}
                     </TableCell>
-                    <TableCell>${item.price}</TableCell>
+                    <TableCell className="w-20 px-2 whitespace-nowrap">${item.price}</TableCell>
                     <TableCell>
                       <Input
                         type="number"
