@@ -296,7 +296,7 @@ function MenuManagementComponent() {
               <TableHead>Nombre</TableHead>
               <TableHead className="w-[7.5rem] px-2 whitespace-nowrap">Categoría</TableHead>
               <TableHead className="w-20 px-2 whitespace-nowrap">Precio</TableHead>
-              <TableHead>Stock</TableHead>
+              <TableHead className="w-16 px-2 whitespace-nowrap">Stock</TableHead>
               <TableHead>Descripción</TableHead>
               <TableHead className="text-right">Acciones</TableHead>
             </TableRow>
@@ -325,12 +325,12 @@ function MenuManagementComponent() {
                       {categoryBadge}
                     </TableCell>
                     <TableCell className="w-20 px-2 whitespace-nowrap">${item.price}</TableCell>
-                    <TableCell>
+                    <TableCell className="w-16 px-2">
                       <Input
                         type="number"
                         value={item.stock ?? ""}
                         onChange={(e) => handleStockUpdate(item.id!, e.target.value)}
-                        className="w-20 h-8 text-center"
+                        className="w-14 h-8 px-1 text-center"
                       />
                     </TableCell>
                     <TableCell className="max-w-[300px] truncate">{item.description}</TableCell>
